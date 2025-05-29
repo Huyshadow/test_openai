@@ -1,0 +1,12 @@
+{
+  "activities": [
+    {
+      "name": "CopyToSynapse",
+      "type": "Copy",
+      "inputs": [{ "referenceName": "BlobSource", "type": "DatasetReference" }],
+      "outputs": [
+        { "referenceName": "SynapseSink", "type": "DatasetReference" }
+      ]
+    }
+  ]
+}

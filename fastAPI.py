@@ -1,72 +1,114 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from openai import AzureOpenAI
-from dotenv import load_dotenv
 import pandas as pd
 import os
+from dotenv import load_dotenv
+from openai import AzureOpenAI
 import io
 
 load_dotenv()
 
 app = FastAPI()
 
-# Load environment variables
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all for development; change in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Load Azure OpenAI credentials
 endpoint = os.getenv("AZURE_ENDPOINT")
 deployment = os.getenv("MODEL_NAME")
-api_key = os.getenv("OPENAI_API_KEY")
+subscription_key = os.getenv("OPENAI_API_KEY")
 api_version = os.getenv("API_VERSION")
 
-# Initialize Azure OpenAI client
 client = AzureOpenAI(
-    api_key=api_key,
     api_version=api_version,
     azure_endpoint=endpoint,
+    api_key=subscription_key,
 )
 
 
 @app.post("/analyze")
-async def analyze_csv(file: UploadFile = File(...)):
+async def analyze_sales_data(file: UploadFile = File(...)):
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
 
-    try:
-        content = await file.read()
-        df = pd.read_csv(io.StringIO(content.decode("ISO-8859-1")))
+    # Read uploaded CSV file
+    content = await file.read()
+    df = pd.read_csv(io.StringIO(content.decode("ISO-8859-1")))
 
-        # Split into chunks
-        chunk_size = 50
-        chunks = [df[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
-        all_summaries = []
+    # Chunk data
+    chunk_size = 50
+    chunks = [df[i : i + chunk_size] for i in range(0, df.shape[0], chunk_size)]
 
-        for i, chunk in enumerate(chunks):
-            table_text = chunk.to_markdown(index=False)
+    all_summaries = []
 
-            response = client.chat.completions.create(
-                model=deployment,
-                messages=[
-                    {"role": "system", "content": "You are a helpful business analyst."},
-                    {"role": "user", "content": f"Here is a sales report:\n{table_text}\nPlease summarize key sales insights and highlight trends."}
-                ],
-                max_tokens=1000,
-                temperature=0.7,
-                top_p=1.0,
-            )
+    # for chunk in chunks:
+    #   table_text = chunk.to_markdown(index=False)
+    for i in range(min(3, len(chunks))):  # Process first 3 chunks
+        table_text = chunks[i].to_markdown(index=False)
 
-            all_summaries.append(response.choices[0].message.content)
-
-        # Final summary
-        final_response = client.chat.completions.create(
-            model=deployment,
+        response = client.chat.completions.create(
             messages=[
-                {"role": "user", "content": "Summarize the following insights:\n\n" + "\n\n".join(all_summaries)}
+                {
+                    "role": "system",
+                    "content": "You are a helpful V4AB assistant business analysis.",
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+                        You are a business data analyst. Analyze the following sales dataset and extract meaningful business insights in a structured format. Focus on the following areas:
+
+                        1. Sales Growth Trends
+                        2. Product Line Performance
+                        3. Customer Regional Distribution
+                        4. Deal Size Breakdown
+                        5. Order Status Insights
+                        6. Customer Type Segmentation
+                        7. Yearly or Quarterly Performance
+                        8. Regional/Territory-wise Opportunities
+
+                        Here is the dataset (in markdown table format):
+
+                        {table_text}
+
+                        Please provide a clear and concise summary of the key business insights grouped by the areas above. Use bullet points for each section and quantify findings when possible.
+                    """,
+                },
             ],
-            max_tokens=1000,
-            temperature=0.7,
+            max_tokens=4000,
+            temperature=1.0,
             top_p=1.0,
+            model=deployment,
         )
 
-        final_summary = final_response.choices[0].message.content
-        return JSONResponse(content={"summary": final_summary})
+        all_summaries.append(response.choices[0].message.content)
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Generate final summary
+    final_response = client.chat.completions.create(
+        max_tokens=4000,
+        temperature=1.0,
+        top_p=1.0,
+        model=deployment,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a business analyst assistant. Your job is to consolidate insights from multiple partial analyses and suggest visual summaries.",
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Based on the following multiple insight summaries, generate a consolidated business insight report. "
+                    "Then suggest appropriate visualizations (charts or tables) that could effectively present the information to a business team:\n\n"
+                    + "\n\n".join(all_summaries)
+                ),
+            },
+        ],
+    )
+
+    return JSONResponse(content={"summary": final_response.choices[0].message.content})

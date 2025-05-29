@@ -8,20 +8,23 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Copy files into image ----
+# ---- Copy requirements and install dependencies first (leverage caching) ----
 COPY requirements.txt .
-COPY . .
 
-# ---- Install Python dependencies ----
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# ---- Load environment variables ----
+# ---- Copy application files ----
+COPY . .
+
+# ---- Set environment variables (Optional) ----
+# Consider using a .env file or docker secrets instead in production
 ENV ENV_FILE_PATH=.env
 
 # ---- Expose port ----
 EXPOSE 8000
 
 # ---- Run FastAPI app ----
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "fastAPI:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
