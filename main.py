@@ -11,7 +11,7 @@ deployment = os.getenv("MODEL_NAME")
 subscription_key = os.getenv("OPENAI_API_KEY")
 api_version = os.getenv("API_VERSION")
 
-df = pd.read_csv("sales.csv", encoding='ISO-8859-1')  
+df = pd.read_csv("synthetic_beverage_sales_data.csv", encoding='ISO-8859-1')  
 
 chunk_size = 50
 chunks = [df[i:i+chunk_size] for i in range(0, df.shape[0], chunk_size)]
@@ -48,7 +48,7 @@ for chunk in chunks:
     print("--------------------------------------------------")
 
 
-final_summary = client.chat.ChatCompletion.create(
+final_summary = client.chat.completions.create(
     model="gpt-4",
     messages=[
         {"role": "user", "content": "Summarize the following insights:\n\n" + "\n\n".join(all_summaries)}
